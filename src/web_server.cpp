@@ -3,6 +3,7 @@
 #include "usb_msc.h"
 #include "mm_manager.h"
 #include "mm_benchmark.h"
+#include "app_engine.h"
 #include "sys_log.h"
 #include <WebServer.h>
 #include <WiFi.h>
@@ -910,17 +911,27 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
           let html = '';
           apps.forEach(app => {
-            let prettyName = app.name.replace('.bin', '').replace(/_/g, ' ');
+            let prettyName = app.name.replace(/\.(bin|so|elf|wasm)$/i, '').replace(/_/g, ' ');
             prettyName = prettyName.charAt(0).toUpperCase() + prettyName.slice(1);
+
+            let engineBadge = '<span class="section-badge" style="font-size:10px;background:rgba(234,88,12,0.15);color:var(--accent-coral);">Legacy Flash (.bin)</span>';
+            if (app.name.endsWith('.so') || app.name.endsWith('.elf')) {
+              engineBadge = '<span class="section-badge" style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--success);">Native Xtensa (.so)</span>';
+            } else if (app.name.endsWith('.wasm')) {
+              engineBadge = '<span class="section-badge" style="font-size:10px;background:rgba(59,130,246,0.15);color:#3b82f6;">WASM Sandbox (.wasm)</span>';
+            }
 
             html += `
               <div class="app-card">
                 <div>
-                  <div class="app-title">
-                    <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--accent-coral);stroke-width:2;fill:none;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                    ${prettyName}
+                  <div class="app-title" style="justify-content:space-between;">
+                    <span style="display:flex;align-items:center;gap:6px;">
+                      <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--accent-coral);stroke-width:2;fill:none;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                      ${prettyName}
+                    </span>
+                    ${engineBadge}
                   </div>
-                  <div class="app-meta">Size: ${formatBytes(app.size)} • Path: /usb/apps/${app.name}</div>
+                  <div class="app-meta" style="margin-top:8px;">Size: ${formatBytes(app.size)} • Path: /usb/apps/${app.name}</div>
                 </div>
                 <div style="display:flex;gap:8px;">
                   <button class="btn-coral" style="flex:1;justify-center;font-size:12px;padding:6px 10px;" onclick="flashProjectFromUSB('${app.name}')">
@@ -1386,35 +1397,60 @@ static void handleSerialClear() {
 }
 
 static void handleAppsActive() {
-    char json[256];
-    snprintf(json, sizeof(json), "{\"active_project\":\"%s\",\"status\":\"running\"}", s_active_project.c_str());
+    AppEngineStatus status = app_engine_get_status();
+    char json[384];
+    const char* typeStr = "Storage Hub Core OS";
+    if (status.type == APP_ENGINE_NATIVE_ELF) typeStr = "Native Xtensa C++ (.so)";
+    else if (status.type == APP_ENGINE_WASM_SANDBOX) typeStr = "Sandboxed WAMR WASM (.wasm)";
+    else if (status.type == APP_ENGINE_LEGACY_BIN) typeStr = "Legacy OTA Firmware (.bin)";
+
+    snprintf(json, sizeof(json),
+        "{"
+        "\"active_project\":\"%s\","
+        "\"is_running\":%s,"
+        "\"type\":\"%s\","
+        "\"ram_allocated_bytes\":%u,"
+        "\"run_time_ms\":%lu,"
+        "\"cpu_core\":%u,"
+        "\"status\":\"running\""
+        "}",
+        status.name,
+        status.is_running ? "true" : "false",
+        typeStr,
+        (unsigned int)status.ram_allocated_bytes,
+        status.run_time_ms,
+        (unsigned int)status.cpu_core
+    );
     server.send(200, "application/json", json);
 }
 
 static void handleAppsStop() {
     sys_log("================================================================================");
-    sys_log("[PIO-RUNNER] Stopping active project '%s' and restoring Storage Hub Core...", s_active_project.c_str());
+    sys_log("[PIO-RUNNER] Stopping active project via Hybrid App Engine...");
+
+    if (app_engine_stop()) {
+        server.send(200, "application/json", "{\"status\":\"stopped_dynamic_app\"}");
+        return;
+    }
 
     const esp_partition_t* ota0 = esp_partition_find_first(
         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL
     );
     if (ota0) {
         esp_ota_set_boot_partition(ota0);
-        s_active_project = "Storage Hub Core";
-        sys_log("[PIO-RUNNER] Boot partition set to ota_0 (Storage Hub Core)! Rebooting...");
+        sys_log("[PIO-RUNNER] Boot partition set to ota_0! Rebooting...");
         server.send(200, "application/json", "{\"status\":\"restored_and_rebooting\"}");
         delay(500);
         ESP.restart();
         return;
     }
 
-    s_active_project = "Storage Hub Core";
     server.send(200, "application/json", "{\"status\":\"rebooting_fallback\"}");
     delay(500);
     ESP.restart();
 }
 
-// Flash firmware directly from /usb/apps/<filename> on USB drive!
+// Flash or Launch firmware directly from /usb/apps/<filename> on USB drive!
 static void handleAppsFlash() {
     if (!is_usb_mounted()) {
         server.send(503, "application/json", "{\"error\":\"USB unmounted\"}");
@@ -1445,10 +1481,30 @@ static void handleAppsFlash() {
     struct stat st;
     fstat(fileno(f), &st);
     size_t fileSize = st.st_size;
+    fclose(f);
 
     sys_log("================================================================================");
+    sys_log("[PIO-UPLOAD] Target Project File: %s (%u bytes)", safePath, fileSize);
+
+    if (fileName.endsWith(".so") || fileName.endsWith(".elf") || fileName.endsWith(".wasm")) {
+        sys_log("[PIO-UPLOAD] Launching dynamic module via Hybrid App Engine...");
+        if (app_engine_launch(fileName.c_str())) {
+            server.send(200, "application/json", "{\"status\":\"launched_dynamic_app\"}");
+            return;
+        } else {
+            server.send(500, "application/json", "{\"error\":\"Dynamic launch failed\"}");
+            return;
+        }
+    }
+
+    // Legacy .bin OTA Flash Engine
+    f = fopen(safePath, "rb");
+    if (!f) {
+        server.send(404, "application/json", "{\"error\":\"Failed to reopen file for OTA flash\"}");
+        return;
+    }
+
     sys_log("[PIO-UPLOAD] Configured upload protocol: FatFS USB Flash Engine");
-    sys_log("[PIO-UPLOAD] Target File: %s (%u bytes)", safePath, fileSize);
     sys_log("[PIO-UPLOAD] [1/4] Erasing Flash Sectors... OK");
     sys_log("[PIO-UPLOAD] [2/4] Streaming Payload to Internal Flash...");
 
@@ -1483,7 +1539,6 @@ static void handleAppsFlash() {
     fclose(f);
 
     if (writtenTotal == fileSize && Update.end(true)) {
-        s_active_project = fileName;
         sys_log("[PIO-UPLOAD] [3/4] Hash verification success! (SHA256 OK)");
         sys_log("[PIO-UPLOAD] [4/4] Rebooting ESP32-S3 into '%s'...", fileName.c_str());
         sys_log("================================================================================");
@@ -1539,7 +1594,11 @@ static void handleAppsList() {
 
     while ((ent = readdir(dir)) != NULL) {
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        if (!String(ent->d_name).endsWith(".bin")) continue;
+
+        String fname = String(ent->d_name);
+        if (!fname.endsWith(".bin") && !fname.endsWith(".so") && !fname.endsWith(".elf") && !fname.endsWith(".wasm")) {
+            continue;
+        }
 
         char fullItemPath[512];
         snprintf(fullItemPath, sizeof(fullItemPath), "%s/%s", appsPath, ent->d_name);
@@ -2033,6 +2092,8 @@ skip_static_serve:
 }
 
 void web_server_init() {
+    app_engine_init();
+
     server.on("/", HTTP_GET, handleIndex);
     server.on("/api/stats", HTTP_GET, handleStats);
     server.on("/api/sys/info", HTTP_GET, handleSysInfo);
