@@ -69,8 +69,8 @@ Requires [PlatformIO CLI](https://platformio.org/) or VS Code Extension:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Lalitkishore2/S3-Storage-Hub-OS.git
-cd S3-Storage-Hub-OS/"usb based s3"
+git clone https://github.com/Lalitkishore2/ESP32-S3-Storage-OS.git
+cd ESP32-S3-Storage-OS/"usb based s3"
 
 # Build Core OS firmware
 pio run
