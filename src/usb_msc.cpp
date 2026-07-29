@@ -18,6 +18,12 @@ static TaskHandle_t s_usb_host_task_handle = NULL;
 static TaskHandle_t s_msc_app_task_handle = NULL;
 static QueueHandle_t s_msc_event_queue = NULL;
 
+// Cached disk stats to avoid expensive f_getfree() on every poll
+static uint64_t s_cached_total = 0;
+static uint64_t s_cached_free  = 0;
+static TickType_t s_cache_tick  = 0;
+static const TickType_t CACHE_REFRESH_MS = 5000;
+
 static void msc_event_cb(const msc_host_event_t *event, void *arg) {
     if (s_msc_event_queue) {
         xQueueSend(s_msc_event_queue, event, 0);
@@ -108,7 +114,7 @@ static void usb_host_lib_task(void *arg) {
     while (true) {
         uint32_t event_flags;
         usb_host_lib_handle_events(pdMS_TO_TICKS(500), &event_flags);
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -165,8 +171,11 @@ bool is_usb_mounted() {
     return s_usb_mounted;
 }
 
-uint64_t get_usb_total_bytes() {
-    if (!s_usb_mounted) return 0;
+// Internal helper to refresh cached stats if stale
+static void refresh_disk_cache() {
+    TickType_t now = xTaskGetTickCount();
+    if ((now - s_cache_tick) < pdMS_TO_TICKS(CACHE_REFRESH_MS) && s_cache_tick != 0) return;
+
     FATFS *fs = NULL;
     DWORD fre_clust = 0;
     FRESULT res = f_getfree("0:", &fre_clust, &fs);
@@ -174,23 +183,22 @@ uint64_t get_usb_total_bytes() {
         res = f_getfree("", &fre_clust, &fs);
     }
     if (res == FR_OK && fs) {
-        return (uint64_t)(fs->n_fatent - 2) * fs->csize * 512;
+        s_cached_total = (uint64_t)(fs->n_fatent - 2) * fs->csize * 512;
+        s_cached_free  = (uint64_t)fre_clust * fs->csize * 512;
+        s_cache_tick   = now;
     }
-    return 0;
+}
+
+uint64_t get_usb_total_bytes() {
+    if (!s_usb_mounted) return 0;
+    refresh_disk_cache();
+    return s_cached_total;
 }
 
 uint64_t get_usb_free_bytes() {
     if (!s_usb_mounted) return 0;
-    FATFS *fs = NULL;
-    DWORD fre_clust = 0;
-    FRESULT res = f_getfree("0:", &fre_clust, &fs);
-    if (res != FR_OK || !fs) {
-        res = f_getfree("", &fre_clust, &fs);
-    }
-    if (res == FR_OK && fs) {
-        return (uint64_t)fre_clust * fs->csize * 512;
-    }
-    return 0;
+    refresh_disk_cache();
+    return s_cached_free;
 }
 
 void sync_usb_fatfs() {
@@ -202,6 +210,8 @@ void sync_usb_fatfs() {
             DRESULT dr = disk_write(fs->pdrv, fs->win, fs->winsect, 1);
             if (dr == RES_OK) {
                 fs->wflag = 0;
+                // Invalidate cached stats after filesystem modification
+                s_cache_tick = 0;
                 Serial.printf("[USB] Physically committed FAT directory sector %lu to USB flash media.\n", (unsigned long)fs->winsect);
             } else {
                 Serial.printf("[USB] disk_write sync failed: %d\n", dr);

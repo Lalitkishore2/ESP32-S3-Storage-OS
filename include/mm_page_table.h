@@ -150,6 +150,21 @@ private:
      * @brief Count entries in a given segment.
      */
     uint32_t count_in_segment(mm_slru_segment_t segment) const;
+
+    // O(1) hash map index: page_id -> slot index (-1 = empty)
+    static constexpr uint32_t HASH_BUCKETS = 1024; // power-of-2 for fast modulo
+    int16_t m_hashmap[HASH_BUCKETS];
+
+    // Cached counters to avoid O(n) scans
+    uint32_t m_used_count;
+    uint32_t m_dirty_count;
+    uint32_t m_pinned_count;
+    uint32_t m_prot_count;
+    uint32_t m_prob_count;
+
+    inline uint32_t hash_slot(mm_page_id_t id) const {
+        return id & (HASH_BUCKETS - 1);
+    }
 };
 
 #endif // MM_PAGE_TABLE_H

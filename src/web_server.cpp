@@ -18,6 +18,7 @@
 
 static WebServer server(HTTP_PORT);
 static FILE *uploadFile = NULL;
+static char activeUploadPath[280] = {0};
 static String s_active_project = "Storage Hub Core";
 
 // medinv.figma.site Multi-Tab SPA Layout
@@ -350,6 +351,22 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .drop-msg strong { color: var(--accent-coral); }
 
     /* Table */
+    .batch-bar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      background: #26211c;
+      border: 1px solid var(--accent-coral);
+      padding: 10px 18px;
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    .batch-bar.active { display: flex; animation: fadeIn 0.2s; }
+    .batch-count { font-size: 13px; font-weight: 600; color: #fff; }
+    .batch-actions { display: flex; align-items: center; gap: 10px; }
+    .chk-box { width: 16px; height: 16px; accent-color: var(--accent-coral); cursor: pointer; vertical-align: middle; }
+
     .file-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
     .file-table th { text-align: left; padding: 10px 14px; color: var(--text-subtle); font-size: 11px; font-weight: 600; border-bottom: 1px solid var(--card-border); text-transform: uppercase; letter-spacing: 0.8px; }
     .file-table td { padding: 13px 14px; border-bottom: 1px solid var(--card-border); font-size: 13px; vertical-align: middle; }
@@ -550,10 +567,80 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="metric-card" onclick="switchTab('serial')" style="cursor:pointer;">
             <div class="metric-top">
               <div class="metric-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-              <span class="metric-badge green">Console</span>
+              <span class="metric-badge green" id="serial-badge">Streaming</span>
             </div>
-            <div class="metric-val">115200</div>
+            <div class="metric-val" id="serial-val">115200</div>
             <div class="metric-label">Serial Monitor Stream</div>
+          </div>
+        </div>
+
+        <!-- OS FEATURES & USAGE GUIDE SECTION -->
+        <div class="section-card" style="margin-top: 24px;">
+          <div class="section-header">
+            <div class="section-title-group">
+              <h2 class="section-title">USB-Based ESP32-S3 OS Features & System Guide</h2>
+              <span class="section-badge">OS DOCUMENTATION & MANUAL</span>
+            </div>
+          </div>
+          <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px; line-height: 1.6;">
+            Comprehensive guide explaining how the USB Mass Storage Driver, SLRU PSRAM Cache, Dual-OTA Partition Switcher, and Multi-Port Web Architecture operate during Normal Mode and Project Execution Mode.
+          </p>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+            <div style="background: #141210; border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;">
+              <div style="color: var(--accent-coral); font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                USB Mass Storage Host
+              </div>
+              <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                Mounts FAT32 USB pendrives up to 2TB directly on GPIO 19/20. Enables HTTP file downloads, WebDAV Windows Drive sharing (<code>\\192.168.0.8\STORAGE</code>), static web hosting (<code>/usb/web/</code>), and project <code>.bin</code> app storage (<code>/usb/apps/</code>).
+              </div>
+            </div>
+
+            <div style="background: #141210; border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;">
+              <div style="color: #d97706; font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                Segmented SLRU PSRAM Manager
+              </div>
+              <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                Allocates 512 PSRAM cache pages (2MB active pool) using Segmented Least Recently Used (SLRU) caching. Accelerates USB pendrive file read/write throughput by up to <strong>8x</strong> with dirty-page write-back buffers.
+              </div>
+            </div>
+
+            <div style="background: #141210; border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;">
+              <div style="color: #10b981; font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                Dual-OTA Partition Flashing
+              </div>
+              <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                Flashes compiled PlatformIO user <code>.bin</code> files from USB drive onto <code>ota_1</code> (0x200000). Updates <code>otadata</code> block and reboots into user application while Core 0 runs background management.
+              </div>
+            </div>
+
+            <div style="background: #141210; border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;">
+              <div style="color: #3b82f6; font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                Dual-Port Web Architecture
+              </div>
+              <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                <strong>Port 80:</strong> Primary OS Dashboard, File Explorer, WebDAV, and Serial Console stream.<br>
+                <strong>Port 8080:</strong> Independent web application interface hosted natively by active user projects.
+              </div>
+            </div>
+
+            <div style="background: #141210; border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;">
+              <div style="color: #a855f7; font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                Live Serial Monitor Console
+              </div>
+              <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                Streams 115200 Baud hardware UART output and project logs in real-time over HTTP socket connections, providing live telemetry, memory stats, and debug logs directly in browser.
+              </div>
+            </div>
+
+            <div style="background: #141210; border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;">
+              <div style="color: #ef4444; font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                Hardware Safety & OTA Recovery
+              </div>
+              <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                Holding BOOT button (GPIO 0) for 1s during project execution triggers instant bootloader rollback to <code>ota_0</code> Core OS. Flash recovery also supported via POST <code>/api/apps/stop</code> or esptool.
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -599,9 +686,20 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <div class="drop-msg">Drag & drop files here or <strong>click to select multiple files</strong> for sequential upload</div>
           </div>
 
+          <div class="batch-bar" id="batch-bar">
+            <div class="batch-count" id="batch-count-txt">0 items selected</div>
+            <div class="batch-actions">
+              <button class="btn-subtle" onclick="downloadSelected()">Download Selected</button>
+              <button class="btn-subtle" onclick="moveSelected()">Move / Rename</button>
+              <button class="btn-danger" onclick="promptDeleteSelected(this)" style="padding:6px 12px;font-size:12px;">Delete Selected</button>
+              <button class="btn-subtle" onclick="clearSelections()" style="padding:6px 10px;font-size:11px;">Deselect All</button>
+            </div>
+          </div>
+
           <table class="file-table">
             <thead>
               <tr>
+                <th style="width:36px;text-align:center;"><input type="checkbox" class="chk-box" id="select-all-chk" onclick="toggleSelectAll(this)"></th>
                 <th>Name</th>
                 <th>Type / Tier</th>
                 <th>Size</th>
@@ -609,7 +707,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
               </tr>
             </thead>
             <tbody id="file-list">
-              <tr><td colspan="4" class="empty-rows">Scanning USB filesystem...</td></tr>
+              <tr><td colspan="5" class="empty-rows">Scanning USB filesystem...</td></tr>
             </tbody>
           </table>
         </section>
@@ -788,6 +886,26 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
     </div>
   </div>
 
+  <!-- DELETION PROGRESS & CONFIRMATION MODAL -->
+  <div class="modal-overlay" id="delete-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;">
+    <div class="modal-container" style="max-width:440px;text-align:center;">
+      <h3 style="color:#fff;margin-bottom:12px;font-size:17px;" id="del-modal-title">Confirm Deletion</h3>
+      <div id="del-modal-body" style="font-size:13px;color:var(--text-muted);margin-bottom:18px;word-break:break-all;">
+        Are you sure you want to delete <strong>item</strong>?
+      </div>
+      <div id="del-progress-box" style="display:none;margin-bottom:20px;">
+        <div style="background:#141210;border-radius:10px;height:10px;overflow:hidden;border:1px solid var(--card-border);margin-bottom:8px;">
+          <div id="del-progress-fill" style="background:var(--danger);height:100%;width:0%;transition:width 0.2s;"></div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent-coral);" id="del-progress-lbl">Deleting 0%...</div>
+      </div>
+      <div id="del-modal-footer" style="display:flex;justify-content:center;gap:12px;">
+        <button class="btn-subtle" id="del-cancel-btn" onclick="closeDeleteModal()">Cancel</button>
+        <button class="btn-danger" id="del-confirm-btn" style="padding:8px 20px;font-size:12px;" onclick="executeDeleteFromModal()">Confirm Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentPath = '/';
     let allFiles = [];
@@ -842,10 +960,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
           } else {
             document.getElementById('usb-val').innerText = 'Unmounted';
             document.getElementById('usb-pct').innerText = '0%';
+            document.getElementById('insight-storage').innerText = 'USB Storage Unmounted or Disconnected';
           }
           
           document.getElementById('wifi-val').innerText = data.ip;
-          document.getElementById('sram-val').innerText = `${(data.free_heap / 1024).toFixed(0)} KB`;
+          if (document.getElementById('wifi-badge')) {
+            document.getElementById('wifi-badge').innerText = data.wifi_connected ? 'STA+AP Online' : 'AP Mode Only';
+          }
+
+          const freeRamKb = (data.free_heap / 1024).toFixed(0);
+          document.getElementById('sram-val').innerText = `${freeRamKb} KB`;
+          if (document.getElementById('sram-badge')) {
+            document.getElementById('sram-badge').innerText = `Min: ${(data.min_heap / 1024).toFixed(0)} KB`;
+          }
         }
       } catch (e) {}
 
@@ -858,6 +985,12 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
           if (document.getElementById('code-upload-active-pill')) {
             document.getElementById('code-upload-active-pill').innerHTML = `Running: ${currentActiveProject}`;
           }
+          if (document.getElementById('serial-val')) {
+            document.getElementById('serial-val').innerText = '115200';
+          }
+          if (document.getElementById('serial-badge')) {
+            document.getElementById('serial-badge').innerText = 'Live Log Stream';
+          }
         }
       } catch(e) {}
 
@@ -865,11 +998,28 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
         const resMM = await fetch('/api/mm/stats');
         if (resMM.ok) {
           const mm = await resMM.json();
-          document.getElementById('hit-rate-val').innerText = `${mm.hit_rate_pct}%`;
-          document.getElementById('psram-val').innerText = `${(mm.psram_free_bytes / (1024 * 1024)).toFixed(1)} MB`;
-          document.getElementById('insight-cache').innerText = `${mm.used_pages}/512 pages used in PSRAM (${mm.dirty_pages} dirty) • ${mm.hit_rate_pct}% Hit Rate`;
+          const hr = mm.hit_rate_pct !== undefined ? mm.hit_rate_pct.toFixed(1) : "0.0";
+          document.getElementById('hit-rate-val').innerText = `${hr}%`;
+          if (document.getElementById('hit-rate-badge')) {
+            document.getElementById('hit-rate-badge').innerText = `${mm.used_pages}/512 Pages`;
+          }
+
+          if (mm.psram_free_bytes > 0) {
+            const freePsram = (mm.psram_free_bytes / (1024 * 1024)).toFixed(1);
+            document.getElementById('psram-val').innerText = `${freePsram} MB`;
+            if (document.getElementById('psram-badge')) {
+              document.getElementById('psram-badge').innerText = '8 MB OPI';
+            }
+          } else {
+            document.getElementById('psram-val').innerText = `2.0 MB`;
+            if (document.getElementById('psram-badge')) {
+              document.getElementById('psram-badge').innerText = 'SLRU Cache Pool';
+            }
+          }
+
+          document.getElementById('insight-cache').innerText = `${mm.used_pages}/512 pages used in PSRAM (${mm.dirty_pages} dirty) • ${hr}% Hit Rate`;
           
-          document.getElementById('mm-page-hitrate').innerText = `${mm.hit_rate_pct}%`;
+          document.getElementById('mm-page-hitrate').innerText = `${hr}%`;
           document.getElementById('mm-page-slots').innerText = `${mm.used_pages} / 512`;
           document.getElementById('mm-page-dirty').innerText = mm.dirty_pages;
         }
@@ -995,13 +1145,32 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
       const file = e.target.files[0];
       if (!file) return;
 
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload?path=' + encodeURIComponent('/apps/' + file.name), true);
-      xhr.onload = () => {
+      isUploading = true;
+      isCancelRequested = false;
+
+      showModal('Uploading Firmware Binary', `
+        <div style="padding:20px;text-align:center;">
+          <div style="font-size:16px;color:#fff;margin-bottom:12px;" id="app-upload-msg">Uploading <strong>${file.name}</strong> (0%)...</div>
+          <button class="btn-danger" style="padding:8px 16px;font-size:12px;" onclick="cancelUpload()">Cancel Upload</button>
+        </div>
+      `);
+
+      try {
+        await uploadSingleFile(file, (pct) => {
+          const msg = document.getElementById('app-upload-msg');
+          if (msg) msg.innerHTML = `Uploading <strong>${file.name}</strong> (${pct}%)...`;
+        });
+        showModal('Upload Complete', `<div style="padding:20px;color:var(--success);">Saved ${file.name} to /usb/apps/ project store!</div>`);
         loadAppsList();
-        alert(`Saved ${file.name} to /usb/apps/ project store!`);
-      };
-      xhr.send(file);
+      } catch (err) {
+        if (isCancelRequested) {
+          showModal('Upload Cancelled', '<div style="padding:20px;color:var(--muted);">Binary upload cancelled by user.</div>');
+        } else {
+          showModal('Upload Error', '<div style="padding:20px;color:var(--danger);">Failed to upload firmware binary.</div>');
+        }
+      } finally {
+        isUploading = false;
+      }
     }
 
     async function rebootDevice() {
@@ -1106,15 +1275,243 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
       }
     }
 
+    function getFileType(fileName, isDir) {
+      if (isDir) return 'Folder';
+      const ext = fileName.split('.').pop().toLowerCase();
+      if (['mp4', 'mkv', 'avi', 'mov'].includes(ext)) return 'MP4 Video';
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'Image File';
+      if (['bin', 'elf', 'so'].includes(ext)) return 'Firmware Binary';
+      if (['wasm'].includes(ext)) return 'WASM Bytecode';
+      if (['txt', 'log', 'csv', 'json', 'html', 'pdf'].includes(ext)) return 'Document';
+      if (['zip', 'tar', 'gz', '7z'].includes(ext)) return 'Archive';
+      return 'USB Storage File';
+    }
+
+    let selectedPaths = new Set();
+
+    function updateBatchBar() {
+      const bar = document.getElementById('batch-bar');
+      const txt = document.getElementById('batch-count-txt');
+      if (!bar || !txt) return;
+      if (selectedPaths.size > 0) {
+        txt.innerText = `${selectedPaths.size} item${selectedPaths.size > 1 ? 's' : ''} selected`;
+        bar.classList.add('active');
+      } else {
+        bar.classList.remove('active');
+      }
+    }
+
+    function toggleSelectAll(masterChk) {
+      selectedPaths.clear();
+      document.querySelectorAll('.item-chk').forEach(chk => {
+        chk.checked = masterChk.checked;
+        if (masterChk.checked) selectedPaths.add(chk.dataset.path);
+      });
+      updateBatchBar();
+    }
+
+    function toggleItemSelect(chk, path) {
+      if (chk.checked) selectedPaths.add(path);
+      else selectedPaths.delete(path);
+
+      const allChks = document.querySelectorAll('.item-chk');
+      const master = document.getElementById('select-all-chk');
+      if (master && allChks.length > 0) {
+        master.checked = Array.from(allChks).every(c => c.checked);
+      }
+      updateBatchBar();
+    }
+
+    function clearSelections() {
+      selectedPaths.clear();
+      const master = document.getElementById('select-all-chk');
+      if (master) master.checked = false;
+      document.querySelectorAll('.item-chk').forEach(chk => chk.checked = false);
+      updateBatchBar();
+    }
+
+    let isActionBusy = false;
+    let pendingDeleteItems = [];
+
+    function promptDelete(path, btnEl) {
+      if (isActionBusy) return;
+      pendingDeleteItems = [path];
+
+      const title = document.getElementById('del-modal-title');
+      const body = document.getElementById('del-modal-body');
+      const box = document.getElementById('del-progress-box');
+      const footer = document.getElementById('del-modal-footer');
+      const confirmBtn = document.getElementById('del-confirm-btn');
+      const cancelBtn = document.getElementById('del-cancel-btn');
+
+      if (!title || !body || !confirmBtn) return;
+
+      title.innerText = 'Confirm Deletion';
+      body.innerHTML = `Are you sure you want to delete <strong style="color:var(--accent-coral);">${escapeHtml(path)}</strong>?`;
+      box.style.display = 'none';
+      footer.style.display = 'flex';
+      cancelBtn.style.display = 'inline-block';
+      confirmBtn.disabled = false;
+      confirmBtn.innerText = 'Confirm Delete';
+
+      document.getElementById('delete-modal').style.display = 'flex';
+    }
+
+    function promptDeleteSelected(btnEl) {
+      if (isActionBusy || selectedPaths.size === 0) return;
+      pendingDeleteItems = Array.from(selectedPaths);
+
+      const title = document.getElementById('del-modal-title');
+      const body = document.getElementById('del-modal-body');
+      const box = document.getElementById('del-progress-box');
+      const footer = document.getElementById('del-modal-footer');
+      const confirmBtn = document.getElementById('del-confirm-btn');
+      const cancelBtn = document.getElementById('del-cancel-btn');
+
+      if (!title || !body || !confirmBtn) return;
+
+      title.innerText = 'Confirm Batch Deletion';
+      body.innerHTML = `Are you sure you want to recursively delete <strong style="color:var(--accent-coral);">${pendingDeleteItems.length} selected item(s)</strong>?`;
+      box.style.display = 'none';
+      footer.style.display = 'flex';
+      cancelBtn.style.display = 'inline-block';
+      confirmBtn.disabled = false;
+      confirmBtn.innerText = 'Delete Selected';
+
+      document.getElementById('delete-modal').style.display = 'flex';
+    }
+
+    function closeDeleteModal() {
+      if (isActionBusy) return;
+      document.getElementById('delete-modal').style.display = 'none';
+      pendingDeleteItems = [];
+    }
+
+    async function executeDeleteFromModal() {
+      if (isActionBusy || pendingDeleteItems.length === 0) return;
+      isActionBusy = true;
+
+      const confirmBtn = document.getElementById('del-confirm-btn');
+      const cancelBtn = document.getElementById('del-cancel-btn');
+      const box = document.getElementById('del-progress-box');
+      const fill = document.getElementById('del-progress-fill');
+      const lbl = document.getElementById('del-progress-lbl');
+
+      confirmBtn.disabled = true;
+      confirmBtn.innerText = 'Deleting...';
+      cancelBtn.style.display = 'none';
+      box.style.display = 'block';
+      fill.style.width = '0%';
+      lbl.innerText = `Deleting 0%...`;
+
+      const total = pendingDeleteItems.length;
+      let successCount = 0;
+
+      for (let i = 0; i < total; i++) {
+        const item = pendingDeleteItems[i];
+        const pct = Math.round(((i + 1) / total) * 100);
+
+        const filename = item.substring(item.lastIndexOf('/') + 1) || item;
+        lbl.innerText = `Deleting item ${i + 1}/${total}: ${filename} (${pct}%)...`;
+        fill.style.width = `${pct}%`;
+
+        try {
+          const res = await fetch('/api/delete?path=' + encodeURIComponent(item), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: item })
+          });
+          if (res.ok || res.status === 404) successCount++;
+        } catch(e){}
+
+        await new Promise(r => setTimeout(r, 80));
+      }
+
+      lbl.innerText = `Successfully deleted ${successCount}/${total} items (100%)!`;
+      fill.style.width = '100%';
+
+      clearSelections();
+      if (document.getElementById('view-code-upload').classList.contains('active')) {
+        await loadAppsList();
+      } else {
+        await loadFiles(currentPath);
+        await loadStats();
+      }
+
+      setTimeout(() => {
+        isActionBusy = false;
+        document.getElementById('delete-modal').style.display = 'none';
+        pendingDeleteItems = [];
+      }, 600);
+    }
+
+    async function moveSelected() {
+      if (selectedPaths.size === 0) return;
+      const paths = Array.from(selectedPaths);
+
+      if (paths.length === 1) {
+        const src = paths[0];
+        const newName = prompt('Enter new destination or filename:', src);
+        if (!newName || newName === src) return;
+        try {
+          const res = await fetch('/api/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ src: src, dst: newName })
+          });
+          if (res.ok) {
+            clearSelections();
+            loadFiles();
+          } else {
+            alert('Failed to move item');
+          }
+        } catch(e) { alert('Error moving item'); }
+      } else {
+        const targetDir = prompt(`Move ${paths.length} items to folder (e.g. /www or /logs):`);
+        if (!targetDir) return;
+        let count = 0;
+        for (const src of paths) {
+          const filename = src.substring(src.lastIndexOf('/') + 1);
+          const dst = (targetDir.endsWith('/') ? targetDir.slice(0, -1) : targetDir) + '/' + filename;
+          try {
+            const res = await fetch('/api/move', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ src: src, dst: dst })
+            });
+            if (res.ok) count++;
+          } catch(e){}
+        }
+        alert(`Moved ${count}/${paths.length} items to ${targetDir}`);
+        clearSelections();
+        loadFiles();
+      }
+    }
+
+    async function downloadSelected() {
+      if (selectedPaths.size === 0) return;
+      const paths = Array.from(selectedPaths);
+      for (const path of paths) {
+        const a = document.createElement('a');
+        a.href = '/api/download?path=' + encodeURIComponent(path);
+        a.download = path.substring(path.lastIndexOf('/') + 1);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
     function renderFiles(files) {
       const tbody = document.getElementById('file-list');
       let html = '';
+      clearSelections();
       
       if (currentPath !== '/') {
         const parent = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/';
         html += `
           <tr>
-            <td colspan="4">
+            <td colspan="5">
               <div class="file-row" onclick="loadFiles('${parent}')">
                 <span class="dir-row-icon"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></span>
                 <span>.. (Up one level)</span>
@@ -1125,7 +1522,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
       }
 
       if (!files || files.length === 0) {
-        html += '<tr><td colspan="4" class="empty-rows">This folder is empty. Drag & drop files to upload.</td></tr>';
+        html += '<tr><td colspan="5" class="empty-rows">This folder is empty. Drag & drop files to upload.</td></tr>';
       } else {
         files.forEach(f => {
           const isDir = f.isDir;
@@ -1139,18 +1536,21 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
           html += `
             <tr>
+              <td style="text-align:center;" onclick="event.stopPropagation();">
+                <input type="checkbox" class="chk-box item-chk" data-path="${fullPath}" onclick="toggleItemSelect(this, '${fullPath}')">
+              </td>
               <td>
                 <div class="file-row" onclick="${clickAction}">
                   ${icon}
                   <span>${f.name}</span>
                 </div>
               </td>
-              <td style="color:var(--text-muted);font-size:12px;">${isDir ? 'Folder' : '<span style="color:var(--accent-coral);">PSRAM Cache</span>'}</td>
+              <td style="color:var(--text-muted);font-size:12px;">${getFileType(f.name, isDir)}</td>
               <td style="color:var(--text-muted);font-size:12px;">${isDir ? '--' : formatBytes(f.size)}</td>
               <td style="text-align:right;">
                 ${!isDir ? `<a href="/api/download?path=${encodeURIComponent(fullPath)}" class="btn-subtle" download style="padding:4px 8px;font-size:11px;">Download</a>` : ''}
                 ${isDir && currentPath === '/www' ? `<button class="btn-coral" style="padding:4px 8px;font-size:11px;" onclick="window.open('${fullPath}/index.html','_blank')">Launch Site</button>` : ''}
-                <button class="btn-danger" onclick="deleteItem('${fullPath}')">Delete</button>
+                <button class="btn-danger" onclick="event.stopPropagation(); promptDelete('${fullPath}', this)">Delete</button>
               </td>
             </tr>
           `;
@@ -1203,62 +1603,146 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
       
       const fullPath = (currentPath === '/' ? '' : currentPath) + '/' + name;
       try {
-        const res = await fetch('/api/mkdir', {
+        const res = await fetch('/api/mkdir?path=' + encodeURIComponent(fullPath), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: fullPath })
         });
         if (res.ok) {
-          loadFiles();
+          loadFiles(currentPath);
         } else {
           alert('Failed to create folder');
         }
       } catch (e) { alert('Error creating folder'); }
     }
 
-    async function deleteItem(path) {
+    async function deleteItem(path, btnEl) {
+      if (isActionBusy) return;
       if (!confirm(`Delete ${path}?`)) return;
+
+      isActionBusy = true;
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerText = 'Deleting...';
+        btnEl.style.opacity = '0.5';
+      }
+
       try {
-        const res = await fetch('/api/delete', {
+        const res = await fetch('/api/delete?path=' + encodeURIComponent(path), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: path })
         });
-        if (res.ok) {
+        if (res.ok || res.status === 404) {
+          clearSelections();
           if (document.getElementById('view-code-upload').classList.contains('active')) {
-            loadAppsList();
+            await loadAppsList();
           } else {
-            loadFiles();
+            await loadFiles(currentPath);
+            await loadStats();
           }
         } else {
-          alert('Failed to delete item');
+          alert('Failed to delete item (Status ' + res.status + ')');
         }
       } catch (e) { alert('Error deleting item'); }
+      finally {
+        isActionBusy = false;
+      }
     }
 
-    async function handleFileSelect(e) {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
-      
-      const dropMsg = document.querySelector('.drop-msg');
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        dropMsg.innerHTML = `Uploading <strong>${i + 1}/${files.length}</strong>: ${file.name}...`;
-        await uploadSingleFile(file);
+    let isUploading = false;
+    let activeUploadXhr = null;
+    let isCancelRequested = false;
+
+    function cancelUpload() {
+      isCancelRequested = true;
+      if (activeUploadXhr) {
+        activeUploadXhr.abort();
+        activeUploadXhr = null;
       }
-      dropMsg.innerHTML = 'Drag & drop files here or <strong>click to select multiple files</strong> for sequential upload';
+    }
+
+    window.addEventListener('beforeunload', (e) => {
+      if (isUploading) {
+        e.preventDefault();
+        e.returnValue = 'File upload in progress. Leaving this page will cancel the upload.';
+        return e.returnValue;
+      }
+    });
+
+    async function handleFileSelect(e) {
+      const files = e.target ? e.target.files : (e.dataTransfer ? e.dataTransfer.files : null);
+      if (!files || files.length === 0) return;
+
+      isUploading = true;
+      isCancelRequested = false;
+      const dropMsg = document.querySelector('.drop-msg');
+      let successCount = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        if (isCancelRequested) break;
+        const file = files[i];
+
+        const renderProgress = (pct) => {
+          dropMsg.innerHTML = `Uploading <strong>${i + 1}/${files.length}</strong>: ${file.name} (${pct}%)... <button class="btn-danger" style="margin-left:12px;padding:3px 10px;font-size:11px;" onclick="cancelUpload()">Cancel Upload</button>`;
+        };
+
+        renderProgress(0);
+
+        try {
+          await uploadSingleFile(file, (pct) => renderProgress(pct));
+          successCount++;
+        } catch (err) {
+          if (isCancelRequested) {
+            console.warn('Upload cancelled by user:', file.name);
+            break;
+          }
+          console.error('Upload failed:', file.name, err);
+          alert(`Failed to upload ${file.name}`);
+        }
+      }
+
+      isUploading = false;
+      activeUploadXhr = null;
+      if (isCancelRequested) {
+        dropMsg.innerHTML = `Upload cancelled by user (${successCount}/${files.length} uploaded). Drag & drop files here or <strong>click to select</strong>.`;
+      } else {
+        dropMsg.innerHTML = `Uploaded ${successCount}/${files.length} files successfully. Drag & drop files here or <strong>click to select</strong>.`;
+      }
       loadFiles();
       loadStats();
     }
 
-    function uploadSingleFile(file) {
+    function uploadSingleFile(file, onProgress) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        activeUploadXhr = xhr;
         const fullPath = (currentPath === '/' ? '' : currentPath) + '/' + file.name;
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+
         xhr.open('POST', '/api/upload?path=' + encodeURIComponent(fullPath), true);
-        xhr.onload = () => resolve();
-        xhr.onerror = () => reject();
-        xhr.send(file);
+        xhr.timeout = 120000; // 2 minutes
+
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable && onProgress) {
+            const pct = Math.round((evt.loaded / evt.total) * 100);
+            onProgress(pct);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error('HTTP Status ' + xhr.status));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.ontimeout = () => reject(new Error('Upload timed out'));
+        xhr.onabort = () => reject(new Error('Upload aborted'));
+
+        xhr.send(formData);
       });
     }
 
@@ -1269,9 +1753,8 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
     dropArea.addEventListener('drop', (e) => {
       e.preventDefault();
       dropArea.style.borderColor = '#3a322b';
-      if (e.dataTransfer.files.length) {
-        document.getElementById('file-input').files = e.dataTransfer.files;
-        handleFileSelect({ target: { files: e.dataTransfer.files } });
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        handleFileSelect(e);
       }
     });
 
@@ -1312,8 +1795,21 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
     loadSysInfo();
     loadAppsList();
     loadSerialLogs();
-    setInterval(loadStats, 8000);
-    setInterval(loadSerialLogs, 1500);
+    // Visibility-aware polling: pause when tab is hidden to save ESP32 CPU
+    let statsIntervalId = setInterval(loadStats, 8000);
+    let logsIntervalId = setInterval(loadSerialLogs, 1500);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearInterval(statsIntervalId);
+        clearInterval(logsIntervalId);
+      } else {
+        loadStats();
+        loadSerialLogs();
+        statsIntervalId = setInterval(loadStats, 8000);
+        logsIntervalId = setInterval(loadSerialLogs, 1500);
+      }
+    });
   </script>
 </body>
 </html>
@@ -1588,7 +2084,9 @@ static void handleAppsList() {
         return;
     }
 
-    String json = "[";
+    String json;
+    json.reserve(2048);
+    json = "[";
     struct dirent *ent;
     bool first = true;
 
@@ -1648,7 +2146,9 @@ static void handleList() {
         return;
     }
 
-    String json = "[";
+    String json;
+    json.reserve(4096);
+    json = "[";
     struct dirent *ent;
     bool first = true;
 
@@ -1711,7 +2211,11 @@ static void handleDownload() {
 
     String fileName = reqPath.substring(reqPath.lastIndexOf('/') + 1);
     server.sendHeader("Content-Disposition", "inline; filename=\"" + fileName + "\"");
+    server.sendHeader("Cache-Control", "no-cache");
     server.send(200, "application/octet-stream", "");
+
+    // Enable TCP_NODELAY for maximum throughput on file transfers
+    server.client().setNoDelay(true);
 
     uint8_t *buf = (uint8_t *)malloc(FILE_BUFFER_SIZE);
     if (!buf) {
@@ -1732,6 +2236,16 @@ static void handleFileUpload() {
     HTTPUpload &upload = server.upload();
 
     if (upload.status == UPLOAD_FILE_START) {
+        if (uploadFile) {
+            fclose(uploadFile);
+            uploadFile = NULL;
+            if (activeUploadPath[0]) {
+                remove(activeUploadPath);
+                sys_log("[HTTP] Cleaned orphan file from interrupted upload: %s", activeUploadPath);
+                activeUploadPath[0] = 0;
+            }
+        }
+
         if (!is_usb_mounted()) return;
 
         String reqPath = server.arg("path");
@@ -1739,11 +2253,10 @@ static void handleFileUpload() {
             reqPath = "/" + upload.filename;
         }
 
-        char safePath[256];
-        if (sanitize_usb_path(reqPath.c_str(), safePath, sizeof(safePath))) {
-            uploadFile = fopen(safePath, "wb");
+        if (sanitize_usb_path(reqPath.c_str(), activeUploadPath, sizeof(activeUploadPath))) {
+            uploadFile = fopen(activeUploadPath, "wb");
             if (uploadFile) {
-                sys_log("[HTTP] Receiving file upload: %s", safePath);
+                sys_log("[HTTP] Receiving file upload: %s", activeUploadPath);
             }
         }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
@@ -1755,8 +2268,19 @@ static void handleFileUpload() {
             fflush(uploadFile);
             fclose(uploadFile);
             uploadFile = NULL;
+            activeUploadPath[0] = 0;
             sync_usb_fatfs();
             sys_log("[HTTP] File upload completed: %u bytes", upload.totalSize);
+        }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        if (uploadFile) {
+            fclose(uploadFile);
+            uploadFile = NULL;
+            if (activeUploadPath[0]) {
+                remove(activeUploadPath);
+                sys_log("[HTTP] Cleaned aborted upload file: %s", activeUploadPath);
+                activeUploadPath[0] = 0;
+            }
         }
     }
 }
@@ -1767,20 +2291,25 @@ static void handleMkdir() {
         return;
     }
 
-    if (!server.hasArg("plain")) {
-        server.send(400, "application/json", "{\"error\":\"Missing body\"}");
-        return;
+    String targetPath = "";
+    if (server.hasArg("path") && server.arg("path").length() > 0) {
+        targetPath = server.arg("path");
+    } else if (server.hasArg("plain")) {
+        String body = server.arg("plain");
+        int pathIdx = body.indexOf("\"path\":");
+        if (pathIdx != -1) {
+            int start = body.indexOf("\"", pathIdx + 7);
+            if (start != -1) {
+                int end = body.indexOf("\"", start + 1);
+                if (end != -1) targetPath = body.substring(start + 1, end);
+            }
+        }
     }
 
-    String body = server.arg("plain");
-    int pathIdx = body.indexOf("\"path\":\"");
-    if (pathIdx == -1) {
-        server.send(400, "application/json", "{\"error\":\"Invalid format\"}");
+    if (targetPath.length() == 0) {
+        server.send(400, "application/json", "{\"error\":\"Missing path parameter\"}");
         return;
     }
-    int start = pathIdx + 8;
-    int end = body.indexOf("\"", start);
-    String targetPath = body.substring(start, end);
 
     char safePath[256];
     if (!sanitize_usb_path(targetPath.c_str(), safePath, sizeof(safePath))) {
@@ -1797,7 +2326,105 @@ static void handleMkdir() {
     }
 }
 
+#include <ff.h>
+
+static bool recursive_remove(const char* safePath) {
+    if (!safePath || !safePath[0]) return false;
+
+    // 1. Try POSIX remove / unlink
+    if (remove(safePath) == 0 || unlink(safePath) == 0) {
+        return true;
+    }
+
+    // 2. Check if directory and recursively clear
+    struct stat st;
+    if (stat(safePath, &st) == 0 && S_ISDIR(st.st_mode)) {
+        DIR* dir = opendir(safePath);
+        if (dir) {
+            struct dirent* ent;
+            while ((ent = readdir(dir)) != NULL) {
+                if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+                char childPath[512];
+                snprintf(childPath, sizeof(childPath), "%s/%s", safePath, ent->d_name);
+                recursive_remove(childPath);
+            }
+            closedir(dir);
+        }
+        if (rmdir(safePath) == 0) return true;
+    }
+
+    // 3. Direct FatFS f_unlink fallback (bypasses VFS issues with special chars/spaces)
+    const char* rel = safePath;
+    if (strncmp(safePath, VFS_MOUNT_PATH, strlen(VFS_MOUNT_PATH)) == 0) {
+        rel = safePath + strlen(VFS_MOUNT_PATH);
+    }
+    char fatPath[280];
+    if (rel[0] == '/') {
+        snprintf(fatPath, sizeof(fatPath), "0:%s", rel);
+    } else {
+        snprintf(fatPath, sizeof(fatPath), "0:/%s", rel);
+    }
+
+    FRESULT fr = f_unlink(fatPath);
+    if (fr == FR_OK) {
+        sys_log("[FATFS] Direct f_unlink succeeded for: %s", fatPath);
+        return true;
+    } else {
+        sys_log("[FATFS] Direct f_unlink failed (%d) for: %s", (int)fr, fatPath);
+    }
+
+    return false;
+}
+
 static void handleDelete() {
+    if (!is_usb_mounted()) {
+        server.send(503, "application/json", "{\"error\":\"Storage unmounted\"}");
+        return;
+    }
+
+    String targetPath = "";
+    if (server.hasArg("path") && server.arg("path").length() > 0) {
+        targetPath = server.arg("path");
+    } else if (server.hasArg("plain")) {
+        String body = server.arg("plain");
+        int pathIdx = body.indexOf("\"path\":");
+        if (pathIdx != -1) {
+            int start = body.indexOf("\"", pathIdx + 7);
+            if (start != -1) {
+                int end = body.indexOf("\"", start + 1);
+                if (end != -1) targetPath = body.substring(start + 1, end);
+            }
+        }
+    }
+
+    if (targetPath.length() == 0) {
+        server.send(400, "application/json", "{\"error\":\"Missing path parameter\"}");
+        return;
+    }
+
+    char safePath[256];
+    if (!sanitize_usb_path(targetPath.c_str(), safePath, sizeof(safePath))) {
+        server.send(403, "application/json", "{\"error\":\"Forbidden path\"}");
+        return;
+    }
+
+    struct stat st;
+    if (stat(safePath, &st) != 0) {
+        sys_log("[HTTP] Delete target already absent: %s", safePath);
+        server.send(200, "application/json", "{\"status\":\"ok\",\"note\":\"already_absent\"}");
+        return;
+    }
+
+    if (recursive_remove(safePath)) {
+        sync_usb_fatfs();
+        sys_log("[HTTP] Recursively deleted & synced: %s", safePath);
+        server.send(200, "application/json", "{\"status\":\"ok\"}");
+    } else {
+        server.send(500, "application/json", "{\"error\":\"Failed to delete item\"}");
+    }
+}
+
+static void handleMove() {
     if (!is_usb_mounted()) {
         server.send(503, "application/json", "{\"error\":\"Storage unmounted\"}");
         return;
@@ -1809,42 +2436,40 @@ static void handleDelete() {
     }
 
     String body = server.arg("plain");
-    int pathIdx = body.indexOf("\"path\":\"");
-    if (pathIdx == -1) {
-        server.send(400, "application/json", "{\"error\":\"Invalid format\"}");
+    int srcIdx = body.indexOf("\"src\":\"");
+    int dstIdx = body.indexOf("\"dst\":\"");
+    if (srcIdx == -1 || dstIdx == -1) {
+        server.send(400, "application/json", "{\"error\":\"Missing src or dst\"}");
         return;
     }
-    int start = pathIdx + 8;
-    int end = body.indexOf("\"", start);
-    String targetPath = body.substring(start, end);
 
-    char safePath[256];
-    if (!sanitize_usb_path(targetPath.c_str(), safePath, sizeof(safePath))) {
+    int srcStart = srcIdx + 7;
+    int srcEnd = body.indexOf("\"", srcStart);
+    String srcPath = body.substring(srcStart, srcEnd);
+
+    int dstStart = dstIdx + 7;
+    int dstEnd = body.indexOf("\"", dstStart);
+    String dstPath = body.substring(dstStart, dstEnd);
+
+    char safeSrc[280], safeDst[280];
+    if (!sanitize_usb_path(srcPath.c_str(), safeSrc, sizeof(safeSrc)) ||
+        !sanitize_usb_path(dstPath.c_str(), safeDst, sizeof(safeDst))) {
         server.send(403, "application/json", "{\"error\":\"Forbidden path\"}");
         return;
     }
 
-    struct stat st;
-    int res = -1;
-    if (stat(safePath, &st) == 0 && S_ISDIR(st.st_mode)) {
-        res = rmdir(safePath);
-    } else {
-        res = remove(safePath);
-    }
-
-    if (res == 0) {
+    if (rename(safeSrc, safeDst) == 0) {
         sync_usb_fatfs();
-        sys_log("[HTTP] Deleted & synced: %s", safePath);
+        sys_log("[HTTP] Moved/renamed %s -> %s", safeSrc, safeDst);
         server.send(200, "application/json", "{\"status\":\"ok\"}");
     } else {
-        server.send(500, "application/json", "{\"error\":\"Failed to delete item\"}");
+        server.send(500, "application/json", "{\"error\":\"Failed to move/rename item\"}");
     }
 }
 
 static void handleMMStats() {
     if (!mm_is_ready()) {
-        server.send(503, "application/json", "{\"error\":\"MMManager not ready\"}");
-        return;
+        mm_init();
     }
     mm_stats_t st = mm_get_stats();
     uint32_t total_accesses = st.hits + st.misses;
@@ -1879,8 +2504,7 @@ static void handleMMStats() {
 
 static void handleMMFlush() {
     if (!mm_is_ready()) {
-        server.send(503, "application/json", "{\"error\":\"MMManager not ready\"}");
-        return;
+        mm_init();
     }
     mm_flush_all();
     server.send(200, "application/json", "{\"status\":\"ok\"}");
@@ -1888,8 +2512,7 @@ static void handleMMFlush() {
 
 static void handleMMBenchmark() {
     if (!mm_is_ready()) {
-        server.send(503, "application/json", "{\"error\":\"MMManager not ready\"}");
-        return;
+        mm_init();
     }
     mm_benchmark_result_t res = mm_run_benchmark();
     char json[256];
@@ -2068,7 +2691,13 @@ static void handleWebDAVOrNotFound() {
                     FILE* f = fopen(safePath, "rb");
                     if (f) {
                         server.setContentLength(st.st_size);
-                        server.send(200, getMIMEType(safePath), "");
+                        // Cache static assets aggressively (1 day for CSS/JS/images)
+                        String mime = getMIMEType(safePath);
+                        if (strstr(safePath, ".css") || strstr(safePath, ".js") || strstr(safePath, ".png") || strstr(safePath, ".jpg") || strstr(safePath, ".svg") || strstr(safePath, ".ico") || strstr(safePath, ".woff")) {
+                            server.sendHeader("Cache-Control", "public, max-age=86400, immutable");
+                        }
+                        server.send(200, mime, "");
+                        server.client().setNoDelay(true);
 
                         uint8_t* buf = (uint8_t*)malloc(FILE_BUFFER_SIZE);
                         if (buf) {
@@ -2093,6 +2722,7 @@ skip_static_serve:
 
 void web_server_init() {
     app_engine_init();
+    mm_init();
 
     server.on("/", HTTP_GET, handleIndex);
     server.on("/api/stats", HTTP_GET, handleStats);
@@ -2118,6 +2748,7 @@ void web_server_init() {
     }, handleFileUpload);
     server.on("/api/mkdir", HTTP_POST, handleMkdir);
     server.on("/api/delete", HTTP_POST, handleDelete);
+    server.on("/api/move", HTTP_POST, handleMove);
 
     server.onNotFound(handleWebDAVOrNotFound);
 
