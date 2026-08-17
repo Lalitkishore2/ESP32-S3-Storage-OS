@@ -21,39 +21,56 @@ void setup() {
 
     // 1. Initialize Dual Wi-Fi Modes (AP + STA)
     WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(AP_SSID, AP_PASS);
+    WiFi.setAutoReconnect(true);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+
+    // Start SoftAP Hotspot
+    WiFi.softAP(AP_SSID, AP_PASS, AP_CHANNEL);
     IPAddress apIP = WiFi.softAPIP();
 
     sys_log("[HOTSPOT] Network SSID : '%s' | Pass : '%s'", AP_SSID, AP_PASS);
     sys_log("[HOTSPOT] Access Point IP: http://%s", apIP.toString().c_str());
 
-    // 2. Connect to Home Wi-Fi Router
+    // 2. Configure Fixed Static IP and Connect to Home Wi-Fi Router
+#if USE_STATIC_IP
+    IPAddress staticIP(STATIC_IP);
+    IPAddress staticGW(STATIC_GATEWAY);
+    IPAddress staticSN(STATIC_SUBNET);
+    IPAddress staticDNS(STATIC_DNS);
+    if (WiFi.config(staticIP, staticGW, staticSN, staticDNS)) {
+        sys_log("[WIFI] Static IP configured: http://%s", staticIP.toString().c_str());
+    } else {
+        sys_log("[WIFI] Static IP configuration failed, using DHCP.");
+    }
+#endif
+
     sys_log("[WIFI] Connecting to Home Wi-Fi '%s'...", STA_SSID);
     WiFi.begin(STA_SSID, STA_PASS);
 
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
         delay(500);
         attempts++;
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-        sys_log("[WIFI] Connected! IP: http://%s", WiFi.localIP().toString().c_str());
+        sys_log("[WIFI] Connected! Local IP: http://%s", WiFi.localIP().toString().c_str());
     } else {
-        sys_log("[WIFI] Home Wi-Fi unavailable. Running in AP-only mode.");
+        sys_log("[WIFI] Home Wi-Fi pending. Running in AP+STA mode (AP IP: http://%s)", apIP.toString().c_str());
     }
 
-    // 3. Register NetBIOS Name Service for Windows File Explorer Network Discovery
+    // 3. Register NetBIOS Name Service for Windows (\\STORAGE and http://STORAGE/)
     NBNS.begin(NETBIOS_NAME);
-    sys_log("[NETBIOS] Broadcast name: \\\\%s", NETBIOS_NAME);
+    sys_log("[NETBIOS] Broadcast name: \\\\%s (Access via http://%s/)", NETBIOS_NAME, NETBIOS_NAME);
 
     // 4. Register mDNS Hostname & Network Services (http://storage.local)
     if (MDNS.begin(MDNS_HOSTNAME)) {
+        MDNS.setInstanceName("ESP32-S3 Storage OS Hub");
         MDNS.addService("http", "tcp", HTTP_PORT);
         MDNS.addService("webdav", "tcp", HTTP_PORT);
         MDNS.addService("workstation", "tcp", HTTP_PORT);
         MDNS.addServiceTxt("http", "tcp", "path", "/");
-        sys_log("[MDNS] Domain: http://%s.local", MDNS_HOSTNAME);
+        sys_log("[MDNS] Domain: http://%s.local (or http://%s/)", MDNS_HOSTNAME, MDNS_HOSTNAME);
     }
 
     // 5. Initialize Web Server & WebDAV Handlers

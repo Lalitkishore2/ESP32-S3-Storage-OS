@@ -9,10 +9,18 @@
 #define STA_SSID        "Chennai Home"
 #define STA_PASS        "Harish@21"
 
+// Static IP Configuration (Fixed IP: 192.168.0.8)
+#define USE_STATIC_IP   true
+#define STATIC_IP       192, 168, 0, 8
+#define STATIC_GATEWAY  192, 168, 0, 1
+#define STATIC_SUBNET   255, 255, 255, 0
+#define STATIC_DNS      192, 168, 0, 1
+
 #define AP_SSID         "ESP32-S3"
 #define AP_PASS         "lalitkishore27"
+#define AP_CHANNEL      1
 
-#define MDNS_HOSTNAME   "storage"   // http://storage.local
+#define MDNS_HOSTNAME   "storage"   // http://storage.local or http://storage/
 #define NETBIOS_NAME    "STORAGE"   // \\STORAGE in Windows File Explorer
 #define HTTP_PORT       80
 
