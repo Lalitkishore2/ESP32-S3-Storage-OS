@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
+#include <NetBIOS.h>
 #include <WebServer.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
@@ -299,7 +301,7 @@ namespace StorageHubApp {
       <div class="header-path">MAIN / <strong id="header-title">USB CODE STORE & PROJECT LAUNCHER</strong></div>
       <div class="header-controls">
         <div class="active-project-pill" id="pill-project">Running: User App</div>
-        <a class="btn-coral" href="http://192.168.0.8:8080/" target="_blank">Open Project Web App (8080)</a>
+        <button class="btn-coral" onclick="window.open(window.location.protocol + '//' + window.location.hostname + ':8080/', '_blank')">Open Project Web App (8080)</button>
         <button class="btn-danger" onclick="stopApp()">Stop & Restore Hub</button>
       </div>
     </div>
@@ -314,7 +316,7 @@ namespace StorageHubApp {
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size:18px; font-weight:600; color:#fff;">Active Project Execution</div>
             <div>
-              <a class="btn-coral" href="http://192.168.0.8:8080/" target="_blank">Open Project Web App (Port 8080)</a>
+              <button class="btn-coral" onclick="window.open(window.location.protocol + '//' + window.location.hostname + ':8080/', '_blank')">Open Project Web App (Port 8080)</button>
               <button class="btn-danger" onclick="stopApp()">Stop Active Project & Restore Hub</button>
             </div>
           </div>
@@ -367,7 +369,11 @@ namespace StorageHubApp {
       if(v==='apps') { document.getElementById('view-apps').classList.add('active'); document.getElementById('nav-apps').classList.add('active'); document.getElementById('header-title').innerText='USB CODE STORE & PROJECT LAUNCHER'; }
       else if(v==='docs') { document.getElementById('view-docs').classList.add('active'); document.getElementById('nav-docs').classList.add('active'); document.getElementById('header-title').innerText='SYSTEM ARCHITECTURE & TECHNICAL GUIDE'; }
     }
-    function stopApp() { fetch('/api/apps/stop', {method:'POST'}).then(()=>location.href='http://192.168.0.8:80/'); }
+    function stopApp() {
+      fetch('/api/apps/stop', {method:'POST'}).then(()=>{
+        setTimeout(() => { location.href = '/'; }, 1000);
+      });
+    }
     setInterval(() => {
       fetch('/api/console').then(r=>r.json()).then(d=>{
         let t = document.getElementById('term');
@@ -386,13 +392,53 @@ namespace StorageHubApp {
         s_project_name = String(projectName);
         Serial.begin(115200);
 
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.setAutoReconnect(true);
+        WiFi.setTxPower(WIFI_POWER_19_5dBm);
+
+#if defined(AP_SSID) && defined(AP_PASS)
+        WiFi.softAP(AP_SSID, AP_PASS, 1);
+#else
+        WiFi.softAP("ESP32-S3", "lalitkishore27", 1);
+#endif
+
+#if defined(USE_STATIC_IP) && USE_STATIC_IP
+        IPAddress staticIP(STATIC_IP);
+        IPAddress staticGW(STATIC_GATEWAY);
+        IPAddress staticSN(STATIC_SUBNET);
+        IPAddress staticDNS(STATIC_DNS);
+        WiFi.config(staticIP, staticGW, staticSN, staticDNS);
+#else
+        IPAddress staticIP(192, 168, 0, 8);
+        IPAddress staticGW(192, 168, 0, 1);
+        IPAddress staticSN(255, 255, 255, 0);
+        IPAddress staticDNS(192, 168, 0, 1);
+        WiFi.config(staticIP, staticGW, staticSN, staticDNS);
+#endif
+
         if (WiFi.status() != WL_CONNECTED) {
-            WiFi.mode(WIFI_STA);
 #if defined(STA_SSID) && defined(STA_PASS)
             WiFi.begin(STA_SSID, STA_PASS);
 #elif defined(WIFI_SSID) && defined(WIFI_PASSWORD)
             WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+#else
+            WiFi.begin("Chennai Home", "Harish@21");
 #endif
+            int attempts = 0;
+            while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+                delay(500);
+                attempts++;
+            }
+        }
+
+        // NetBIOS and mDNS
+        NBNS.begin("STORAGE");
+        if (MDNS.begin("storage")) {
+            MDNS.setInstanceName("ESP32-S3 Storage OS Hub");
+            MDNS.addService("http", "tcp", 80);
+            MDNS.addService("webdav", "tcp", 80);
+            MDNS.addService("workstation", "tcp", 80);
+            MDNS.addServiceTxt("http", "tcp", "path", "/");
         }
 
         logf("[%s] Booting application on ota_1...", projectName);
